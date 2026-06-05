@@ -1,12 +1,11 @@
 ![fluxograma](assets/Fluxograma.svg)
 
 # Introdução
-Early Acess nos jogos é uma modalidade onde os desenvolvedores vendem o jogo ainda em desenvolvimento, utilizando o dinheiro para manter o projeto vivo para ter um lançamento oficial. Por isso, os feedbacks dos jogadores são os dados mais valiosos, pois permitem encontrar rapidamente quais problemas e áreas são prioridades nas atualizações.
+Extrair apenas informações úteis de feedbacks e convertê-los em métricas é um pesadelo para qualquer área que lida com linguagem natural. A dificuldade de tratar textos não estruturados é a razão dos desenvolvedores de jogos não utilizarem a Steam, maior plataforma de jogos do mundo, como fonte de dados.
 
-No entanto, são os fatos que estão dentro do texto que geram essa importância, mas garantir que elas cheguem de forma automática para os devs exige inúmeras técnicas de NLP. É por isso que mesmo sendo a maior plataforma de jogos do mundo, as reviews da Steam são um pesadelo para os devs. Pensando nisso, essa arquitetura de dados propõe uma solução eficiente que une engenharia de dados + IA para resolver esse problema.
+A proposta dessa arquitetura de dados é automatizar a extração de informações úteis da Steam e entregá-las de forma estruturada para os desenvolvedores. Por isso, a solução utiliza uma abordagem sinérgica entre engenharia de dados e IA no ambiente Google Cloud Platafform.
 
-*🎈 Ao fim da vida, nenhuma dessas tecnologias vai para baixo da terra, mas o ser humano cego pelo próprio ego, sim. Por isso, me esforcei ao máximo para que qualquer pessoa possa aprender algo aqui.*
-
+*O projeto também aborda estratégias para reduzir custos com BigQuery, Gemini 3.1 e criação de inferência em lote global.* 
 
 ## Por que as reviews da Steam são complexas de lidar?
 A plataforma permite uma estrutura livre na construção das reivews: o usuário pode escrever o que quiser, da forma que achar melhor e enviar. Ao analisar o conteúdo causado por essa liberdade, percebe-se que a complexidade não está só em gírias, erros gramaticais ou emojis, mas sim uma lista de problemas(tabela abaixo), que vão do mais simples aos que violam os termos de serviço de LLMs.
@@ -21,9 +20,6 @@ A plataforma permite uma estrutura livre na construção das reivews: o usuário
 |Copy Pastas|MÁXIMA|PROMPT + LLM|Inferência, falsos positivos, tokens, prompt e modelo|
 |Spam de caracteres espaçados|MÁXIMA|INDEFINIDO|Alto custo computacional sem garantias de sucesso|
 |Conteúdos nocivos|MÁXIMA|INDEFINIDO|Risco aos termos de serviços da IA|
----
-<br>
-<br>
 
 # Engenharia de dados + IA: os 3 pilares
 
