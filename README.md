@@ -32,7 +32,7 @@ A plataforma permite uma estrutura livre na construção das reivews: o usuário
  A filtragem é a etapa mais importante da arquitetura, pois quanto menos eficiente for as técnicas de filtragem, mais ruídos serão processados, o que compromete as etapas posteriores. Do contrário, mais será o custo com tokens e mais dados de qualidade serão processado. Por isso, a filtragem foi dividida em duas partes até o momento: 
 
 <p align="center">
-  <img src="assets/Exemplo-filtro-2.svg" alt="Exemplos" width="90%">
+  <img src="assets/Exemplo-filtro-2.svg" alt="Exemplos" width="100%">
 </p>
 
 *⚠ Está sendo estudado o uso de embeddings para remover conteúdos aleatórios/nocivos.*
@@ -60,14 +60,14 @@ Com a fragmentação, problemas recorrentes geram resumos semelhantes(o mesmo ca
 ``` text
 Projeto/
 ├── Explicação do Pipeline/
-│   ├── Extação-Load/ # Como extrair os dados da STEAM de forma inteligente e lidar com seus problemas
+│   ├── Extação-Load/ # Problema da API Steam, Pré-processamento, Parquet
 │   ├── Transformação/
-│   │   ├── Filtragem/ Explico como usei técnicas de NLP com SQL e o uso estratégico do Gemini
-│	│   ├── Router/ Explica pra onde os dados vão pos inferencia de relevancia
-│   │   ├── Fragmentação/
-│	│   ├── Router/ Explica pra onde os dados vão pos inferencia de fragmentação
-│   │   ├── Classificação/ Bigquery como vectorDB, herança semantica e etc
-│   ├── Otimizações-Idempotência/
+│   │   ├── Filtragem/ # Corte, REGEX, verificação de continuidade, pré-inferência e inferência em lote.
+│	│   ├── Router/ # Determina se o pipeline continua ou não e direciona os dados para fragmentação, silver ou DLQ.
+│   │   ├── Fragmentação/ # Pré-inferência, inferência em lote e Array Struct dos fragmentos para classificação.
+│	│   ├── Router/ # Determina se o pipeline continua ou não e direciona os dados para classificação ou DLQ.
+│   │   ├── Classificação/ # Unnest dos structs, BigQuery ML + modelos remotos(Gemini embedding), direcionamento dos dados para Gold e VectorDB.
+│   ├── Otimizações-Idempotência/ # Aborda reprocessamento, retrys, gastos com IA, ingestão incremental, partição, clustering e vector index.
 └── Pipeline/
 ```
 
