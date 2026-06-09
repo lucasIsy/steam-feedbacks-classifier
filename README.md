@@ -1,19 +1,21 @@
 ![fluxograma](assets/Fluxograma.svg)
 
 # Introdução
-Extrair apenas informações úteis de feedbacks e convertê-los em métricas é um pesadelo para qualquer área que lida com linguagem natural. A dificuldade de tratar textos não estruturados é a razão dos desenvolvedores de jogos não utilizarem a Steam, maior plataforma de jogos do mundo, como fonte de dados.
+Converter milhares de feedbacks em informações estratégicas é um gargalo para qualquer área que dependa de atualizações constantes. A complexidade de lidar com esses textos é a principal razão dos desenvolvedores de jogos não conseguirem utilizar a Steam, a maior plataforma de jogos do mundo, como fonte de dados.
 
-A proposta dessa arquitetura de dados é automatizar a extração de informações úteis da Steam e entregá-las de forma estruturada para os desenvolvedores. Por isso, a solução utiliza uma abordagem sinérgica entre engenharia de dados e IA no ambiente Google Cloud Platafform.
+A arquitetura de dados criada resolveu esse problema com base em 3 pilares(filtragem, fragmentação e classificação) através da união do tradicional fluxo ELT com IA, embeddings e RAG, automatizando a entrega de dados estratégicos para jogos em desenvolvimento.
 
-*O projeto também aborda estratégias para reduzir custos com BigQuery, Gemini 3.1 e criação de inferência em lote global.* 
+> *O projeto também aborda estratégias para reduzir custos com BigQuery, Gemini 3.1 e criação de inferência em lote global.* 
 
-## Por que as reviews da Steam são complexas de lidar?
-A plataforma permite uma estrutura livre na construção das reivews: o usuário pode escrever o que quiser, da forma que achar melhor e enviar. Ao analisar o conteúdo causado por essa liberdade, percebe-se que a complexidade não está só em gírias, erros gramaticais ou emojis, mas sim uma lista de problemas(tabela abaixo), que vão do mais simples aos que violam os termos de serviço de LLMs.
+## Por que tratar as reviews da Steam são um pesadelo?
+A plataforma permite um estilo livre na criação de reviews, isso significa que o usuário pode escrever o que quiser, da forma que achar melhor e enviar. Por causa dessa liberdade, era esperado problemas comuns de linguagem informal(erros de gramática, gírias e etc.), mas no caso da Steam é necessário estar preparado para lidar com conteúdos extremamente problemáticos, que vão desde emojis, conteúdo sexual, discurso de ódio até apologia a grupos terroristas.
+
+> A complexidade de ignorar esses problemas e extrair apenas as reviews úteis é o que força os desenvolvedores a encontrarem outros meios para receber feedbacks, deixando a Steam de lado.
 
 |Ruídos|Complexidade|Soluções|Lado negativo|
 |---|---|---|---|
 |EMOJIS|Fácil|SQL + REGEX|Custo Computacional|
-|Sentimentos genéricos|Fácil|SQL + REGEX|Custo Computacional|
+|Sentimentos genéricos(bom, ruim...)|Fácil|SQL + REGEX|Custo Computacional|
 |ASCII ART(simples e complexa)|Média|SQL + REGEX|Custo Computacional|
 |Assuntos aleatórios|ALTA|PROMPT + LLM|Inferência, falsos positivos, tokens, prompt e modelo|
 |Reclamações/Problemas sem causador|ALTA|PROMPT + LLM|Inferência, falsos positivos, tokens, prompt e modelo|
@@ -29,7 +31,11 @@ A plataforma permite uma estrutura livre na construção das reivews: o usuário
 </p>
 
 ## Filtragem(maior redutor de custos com IA)
- A filtragem é a etapa mais importante da arquitetura, pois quanto menos eficiente for as técnicas de filtragem, mais ruídos serão processados, o que compromete as etapas posteriores. Do contrário, mais será o custo com tokens e mais dados de qualidade serão processado. Por isso, a filtragem foi dividida em duas partes até o momento: 
+O objetivo é garantir que **apenas dados úteis** avancem para as próximas etapas, que envolvem custos com IA(Gemini 3.1) e embeddings, por isso foi dividida em duas partes: 
+* **Corte + Regex**: remove conteúdos baseados no tamanho da review(caracteres e espaços) antes e depois do regex, garantindo que apenas letras e pontuação permitida avancem - não gastar tokens processando imagens ascii ou emojis.
+* **Classificação booleana**: determina se a review possui algum conteúdo relevante para o desenvolvimento do jogo com base em critérios estipulados e output definido(prompt).
+
+> Quanto mais eficiente for as técnicas de filtragem, menor será o gasto com tokens e embeddings, mas do contrário, as etapas posteriores vão gastar mais e a qualidade nos dados estará comprometida.
 
 <p align="center">
   <img src="assets/Exemplo-filtro-2.svg" alt="Exemplos" width="100%">
@@ -38,7 +44,18 @@ A plataforma permite uma estrutura livre na construção das reivews: o usuário
 *⚠ Está sendo estudado o uso de embeddings para remover conteúdos aleatórios/nocivos.*
 
 ## Fragmentação
-O objetivo final é permitir que o desenvolvedor possa selecionar um topico e descobrir quais são os problemas mais recorrentes. Pra alcançar esse objetivo, os assuntos de uma review são fragmentados e isolados, além de criar um resumo que ajuda a leitura dos devs e aumenta a eficiencia da busca semantica(proxima etapa).
+**Objetivo Final:** Permitir que o desenvolvedor possa selecionar um topico e descobrir rapidamente quais problemas são recorrentes
+
+**Problema:** 
+1. As reviews podem falar sobre um ou mais assuntos, não necessariamente sobre o mesmo tema.
+2. Problemas recorrentes nascem de fatos recorrentes, então vão existir reviews sobre o mesmo assunto, mas escritas de formas diferentes.
+
+**Solução:**
+1. Isolar cada fato em um fragmento de review independente com sua classe e Topicos - colunas para facilitar o agrupamento, filtragem SQL e metadados de VectorDB.
+2. Fazer com que relatos iguais, mas escritos de formas diferentes tenham resumos parecidos - **O mesmo fato gera resumos semanticamente próximos**
+
+**Observação**
+O resumo estratégico é o coração da etapa de classificação, pois ele é a base para a geração dos embeddings e herança por similaridade semântica. Porém, o desempenho da classificação pode mudar drasticamente se a criação desses resumos não forem bem definidas no prompt, além do tamanho dos vetores e modelo utilizado.
 
 <br>
 
@@ -47,7 +64,9 @@ O objetivo final é permitir que o desenvolvedor possa selecionar um topico e de
 </p>
 
 ## Classificação
-Com a fragmentação, problemas recorrentes geram resumos semelhantes(o mesmo causador), o que permite separar o que é conhecido do desconhecido através da similaridade semântica. Ao metrificar a recorrência dos assuntos, é possível monitorar a efitividade dos updates e criar um sistemas de ranking.
+Com a fragmentação, problemas recorrentes geram resumos semelhantes(o mesmo causador), o que permite separar o que é conhecido do desconhecido através da distância semântica. Cada fragmento deve filtrar o vectorDB e trazer apenas os candidatos que vão de acordo com sua classe e topico,evitando comparar um bug de performance com uma insatisfação sobre a falta de transparência com o jogo. 
+
+> Partindo dessa premissa, fragmentos próximos aos que existem no vectorDB são marcados como conhecidos e vão direto pra gold, mas os desconhecidos vão para a fila de RAG.
 
 <br>
 
