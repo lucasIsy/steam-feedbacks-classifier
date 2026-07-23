@@ -1,0 +1,5 @@
+polars==1.42.1
+polars-hash==0.6.0
+httpx==0.28.1
+google-cloud-bigquery==3.42.2
+google-cloud-storage==3.12.1

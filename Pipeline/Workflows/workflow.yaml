@@ -1,0 +1,185 @@
+main:
+  params: [input]
+  steps:
+    # Etapa 0 - iniciando as variáveis vindas do cloud scheduler 
+    - init_variables:
+        assign:
+          # ID do projeto, dataset e tabelas
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - dataset: ${input.dataset}
+          - filtragem_bq_table: ${input.filtragem_bq_table}
+          - fragmentacao_bq_table: ${input.fragmentacao_bq_table}
+          
+          # Para a Etapa 1 do pipeline - extração e armazenamento dos dados
+          - gcs_path: ${input.gcs_path}
+          - steam_game_id: ${input.steam_game_id}
+          - cloud_run_extract_function_name: ${input.cloud_run_extract_function_name}
+          
+          # Etapa 3 e 5 que usam inferencia
+          - location: ${input.location} # endpoint regional ou global - definidos no scheduler
+          - AI_model_name: ${input.AI_model_name} # modelo do gemini
+          - filtragem_bq_table_path: ${"bq://" + project_id + "." + dataset + "." + filtragem_bq_table}
+          - fragmentacao_bq_table_path: ${"bq://" + project_id + "." + dataset + "." + fragmentacao_bq_table}
+
+          # Nome das tabelas temporárias a serem deletadas no final
+          - deletar_tabelas: ["temporaria_1", "temporaria_2", "temporaria_3"]
+    # Etapa 1 - Extração/Load dos dados da Steam
+    - extrair_dados_steam:
+      call: googleapis.run.v2.projects.locations.jobs.execute 
+      args:
+          name: ${"projects/" + project_id + "/locations/region/jobs/" + cloud_run_extract_function_name}
+          body:
+            overrides:
+              containerOverrides:
+                - args: 
+                    - ${"--gcs_path=" + gcs_path}
+                    - ${"--steam_game_id=" + steam_game_id}
+
+    # Etapa 2 - Início Pipeline(corte e regex)
+    - executar_procedure_filtragem:
+      call: googleapis.bigquery.v2.jobs.query
+      args:
+        projectId: ${project_id}
+        body:
+          query: ${"DECLARE var_status STRING; DECLARE var_motivo STRING; CALL `" + project_id + "." + dataset + ".1_procedure_regex_pre_inference`(var_status, var_motivo); SELECT var_status AS status, var_motivo AS motivo;"}
+          useLegacySql: false
+      result: filtragem_bq_response
+    
+    # Etapa 2.5 - Verificação de continuidade do pipeline (existem dados para inferência?)
+    - avaliar_continuidade_filtragem:
+        assign:
+          # f[0] pega a primeira coluna (status)
+          - Pos_regex_status_procedure: ${filtragem_bq_response.rows[0].f[0].v}
+          # f[1] pega a segunda coluna (motivo) retornado pela procedure
+          - Pos_regex_motivo_procedure: ${filtragem_bq_response.rows[0].f[1].v}
+        next: decidir_continuidade
+    
+    - decidir_continuidade_filtragem:
+        switch:
+          - condition: ${Pos_regex_status_procedure == "ENCERRAR"}
+            next: encerramento_controlado
+        next: executar_filtragem_por_inferencia
+
+    - encerramento_controlado_filtragem:
+        return: ${"OK: Execução interrompida controlada. Motivo: " + Pos_regex_motivo_procedure}
+      
+    # Etapa 3 - Filtragem inferência - reviews com conteúdo útil devem avançar
+    - executar_filtragem_por_inferencia:
+        call: googleapis.aiplatform.v1.projects.locations.batchPredictionJobs.create
+        args:
+          parent: ${"projects/" + project_id + "/locations/" + location}
+          body:
+            displayName: "filtering-gemini-batch-bq-global"
+            model: ${AI_model_name}
+            inputConfig:
+              instancesFormat: "bigquery"
+              bigquerySource:
+                inputUri: ${filtragem_bq_table_path}
+            outputConfig:
+              predictionsFormat: "bigquery"
+              bigqueryDestination:
+                outputUri: ${filtragem_bq_table_path}
+    
+    # Etapa 4 - Direcionamento dos dados(DLQ, Silver e temporaria_2(fragmentação))
+    - executar_direcionamento_dados_filtragem:
+      call: googleapis.bigquery.v2.jobs.query
+      args:
+        projectId: ${project_id}
+        body:
+          query: ${"DECLARE var_status STRING; DECLARE var_motivo STRING; CALL `" + project_id + "." + dataset + ".2_PRC_pre_fragmentacao`(var_status, var_motivo); SELECT var_status AS status, var_motivo AS motivo;"}
+          useLegacySql: false
+      result: filtragem_bq_response_inf
+    
+    # Etapa 4.5 Verificação de continuidade do pipeline(existem dados para a etapa de fragmentação?)
+    - avaliar_continuidade_fragmentacao:
+        assign:
+          # f[0] pega a primeira coluna (status)
+          - Pos_infer_filtragem_status_procedure: ${filtragem_bq_response_inf.rows[0].f[0].v}
+          # f[1] pega a segunda coluna (motivo) retornado pela procedure
+          - Pos_infer_filtragem_motivo_procedure: ${filtragem_bq_response_inf.rows[0].f[1].v}
+        next: decidir_continuidade
+    
+    - decidir_continuidade_fragmentacao:
+        switch:
+          - condition: ${Pos_infer_filtragem_status_procedure == "ENCERRAR"}
+            next: encerramento_controlado
+        next: executrar_fragmentacao_por_inferencia
+
+    - encerramento_controlado_fragmentacao:
+        return: ${"OK: Execução interrompida controlada. Motivo: " + Pos_infer_filtragem_motivo_procedure}
+    
+     # Etapa 5 Inferência de fragmentação dos dados marcados como úteis pela IA.  
+    - executrar_fragmentacao_por_inferencia:
+      call: googleapis.aiplatform.v1.projects.locations.batchPredictionJobs.create
+      args:
+        parent: ${"projects/" + project_id + "/locations/" + location}
+        body:
+          displayName: "filtering-gemini-batch-bq-global"
+          model: ${AI_model_name}
+          inputConfig:
+            instancesFormat: "bigquery"
+            bigquerySource:
+              inputUri: ${fragmentacao_bq_table_path}
+          outputConfig:
+            predictionsFormat: "bigquery"
+            bigqueryDestination:
+              outputUri: ${fragmentacao_bq_table_path}
+      result: job_response
+    
+    # Etapa 6 - Direcionamento - Inserção dos fragmentos na Silver e erros para DLQ
+    - executar_direcionamento_dados_fragmentacao:
+      call: googleapis.bigquery.v2.jobs.query
+      args:
+        projectId: ${project_id}
+        body:
+          query:
+            query: ${"CALL `" + project_id + "." + dataset + ".3_procedure_pos_fragmentacao`()"}
+            useLegacySql: false
+    
+    # Etapa 7 - Criação dos embeddings via modelo remoto(BigQuery) para classificação
+    - executar_criacao_embeddings_modelo_remoto:
+      # obrigatório ser .query por conta do tempo de criação dos embeddings
+      call: googleapis.bigquery.v2.jobs.query
+      args:
+        projectId: ${project_id}
+        body:
+          query:
+            query: ${"CALL `" + project_id + "." + dataset + ".4_procedure_criacao_embeddings`()"}
+            useLegacySql: false
+
+    # Etapa 8 - Classificação e herança por proximidade semântica
+    - executar_classificao_e_heranca:
+      # obrigatório ser .query por conta do micro-batch(loops)
+      call: googleapis.bigquery.v2.jobs.query
+      args:
+        projectId: ${project_id}
+        body:
+          query: ${"CALL `" + project_id + "." + dataset + ".5_procedure_classificacao`()"}
+          useLegacySql: false
+    
+    # Etapa 9 - Deletar tabelas temporárias
+    - delete_tables_loop:
+        for:
+          value: table_id
+          in: ${deletar_tabelas}
+          steps:
+            - delete_single_table:
+                try:
+                  call: googleapis.bigquery.v2.tables.delete
+                  args:
+                    projectId: ${project_id}
+                    datasetId: ${dataset}
+                    tableId: ${table_id}
+                except:
+                  as: e
+                  steps:
+                    # Isola o erro para o caso de uma tabela já ter sido deletada 
+                    # ou não existir, permitindo que o fluxo continue para as próximas
+                    - log_error:
+                        call: sys.log
+                        args:
+                          text: ${"Erro ao tentar deletar a tabela " + table_id + ". Continuando... Erro: " + e.message}
+                          severity: "WARNING"
+    # Etapa 10 - FIM
+    - executar_fim_pipeline:
+        return: "Encerrado - todas etapas completas"

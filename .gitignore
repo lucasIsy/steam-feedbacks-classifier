@@ -1,0 +1,5 @@
+Pipeline/scripts/
+Pipeline/config/
+Pipeline/**/*.sh
+Pipeline/deploy.sh
+**.env
