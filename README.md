@@ -1,4 +1,4 @@
-![fluxograma](assets/Fluxograma.svg)
+![fluxograma](assets/Fluxograma.jpeg)
 
 # Introdução
 Converter milhares de feedbacks em informações estratégicas é um gargalo para qualquer área que dependa de atualizações constantes. A complexidade de lidar com esses textos é a principal razão dos desenvolvedores de jogos não conseguirem utilizar a Steam, a maior plataforma de jogos do mundo, como fonte de dados.
