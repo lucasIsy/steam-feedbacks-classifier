@@ -18,6 +18,8 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 EXTRACTION_LOG_TABLE = f"{PROJECT_ID}.{BQ_DATASET}.{BQ_EXTRACTION_LOG_TABLE}"
 
 APP_ID = int(os.getenv("STEAM_APP_ID"))
+BATCH_ID = os.getenv("BATCH_ID")
+INGESTED_AT = datetime.now(timezone.utc)
 
 # ==============================================================================
 # 2. Verifica a ultima execução (BIGQUERY)
@@ -75,7 +77,7 @@ def get_steam_reviews(client: httpx.Client, languages: str, last_extraction: int
     base_url = f"https://store.steampowered.com/appreviews/{APP_ID}"
     params = {
         "json": 1,
-        "filter": "recent", 
+        "filter": "updated",
         "language": languages,
         "review_type": "all",
         "purchase_type": "all",
@@ -92,7 +94,11 @@ def get_steam_reviews(client: httpx.Client, languages: str, last_extraction: int
         current_params = params.copy()
         current_params["cursor"] = cursor
         
-        response = client.get(base_url, params=current_params, timeout=15.0)
+        for tentativa in range(5):
+            response = client.get(base_url, params=current_params, timeout=15.0)
+            if response.status_code not in (429, 500, 502, 503, 504):
+                break
+            time.sleep(2 ** tentativa)
         response.raise_for_status()
         data = response.json()
         
@@ -110,9 +116,9 @@ def get_steam_reviews(client: httpx.Client, languages: str, last_extraction: int
         finalizado = False
 
         for r in reviews:
-            ts_criacao = int(r.get("timestamp_created", 0))
+            ts_updated = int(r.get("timestamp_updated", 0))
             
-            if ts_criacao <= last_extraction:
+            if ts_updated <= last_extraction:
                 finalizado = True
                 break
                 
@@ -121,8 +127,8 @@ def get_steam_reviews(client: httpx.Client, languages: str, last_extraction: int
             # Formata os dados em dicionário para o Polars
             steam_reviews.append({
                 "recommendationid": int(r.get("recommendationid", 0)),
-                "timestamp_created": ts_criacao,
-                "timestamp_updated": int(r.get("timestamp_updated", ts_criacao)),
+                "timestamp_created": int(r.get("timestamp_created", 0)),
+                "timestamp_updated": ts_updated,
                 "app_release_date": int(r.get("app_release_date", 0)), 
                 "language": languages,
                 "review": r.get("review", "").strip(),
@@ -199,7 +205,10 @@ def steam_reviews_to_polars(reviews_list: list) -> tuple[pl.DataFrame, int, int]
         
         # Demais transformações de colunas
         .with_columns([
-            pl.col("review").str.len_chars().alias("characters"),
+            pl.col("review").str.len_chars().cast(pl.Int64).alias("characters"),
+            pl.col("spaces").cast(pl.Int64).alias("spaces"),
+            pl.lit(BATCH_ID, dtype=pl.Utf8).alias("batch_id"),
+            pl.lit(INGESTED_AT).alias("ingested_at"),
             pl.col("author").struct.field("playtime_forever").alias("playtime_forever"),
             pl.col("author").struct.field("playtime_last_two_weeks").alias("playtime_last_two_weeks"),
             pl.col("author").struct.field("playtime_at_review").alias("playtime_at_review"),
@@ -207,6 +216,8 @@ def steam_reviews_to_polars(reviews_list: list) -> tuple[pl.DataFrame, int, int]
         ])
 
         .select([
+            "batch_id",
+            "ingested_at",
             "hash_id",
             "recommendationid",
             "timestamp_created",
@@ -232,7 +243,7 @@ def steam_reviews_to_polars(reviews_list: list) -> tuple[pl.DataFrame, int, int]
 def send_parquet_to_gcs(df_clean: pl.DataFrame, maior_timestamp: int):
     """Salva o DataFrame transformado em formato Parquet direto no Cloud Storage."""
     agora = datetime.now(timezone.utc)
-    gcs_path = f"reviews/ano={agora.year}/mes={agora.month:02d}/reviews_{APP_ID}_{maior_timestamp}.parquet"
+    gcs_path = f"reviews/ano={agora.year}/mes={agora.month:02d}/reviews_{APP_ID}_{maior_timestamp}_{BATCH_ID}.parquet"
     
     print(f"[GCS] Fazendo upload do Parquet para: gs://{GCS_BUCKET_NAME}/{gcs_path}")
     gcs_client = storage.Client(project=PROJECT_ID)
@@ -270,18 +281,18 @@ def executing_pipeline():
     print("[POLARS] Iniciando transformações.")
     df_processed, max_date, total_reviews_extracted = steam_reviews_to_polars(all_reviews)
 
-    # Envia a data da maior review encontrada e 
-    # a quantidade antes da próxima verificação
-    insert_new_date_extraction_log(max_date, total_reviews_extracted)
-    
     # Verificação - Se não existir dados sobreviventes,
     # a função encerra e nem envia o arquivo pro GCS
     if df_processed.is_empty():
         print("[PIPELINE] Nenhuma review sobreviveu à filtragem.")
+        insert_new_date_extraction_log(max_date, total_reviews_extracted)
         return
 
-    # Salva no Storage (Parquet)
-    send_parquet_to_gcs(df_processed)
+    send_parquet_to_gcs(df_processed, max_date)
+
+    # Envia a data da maior review encontrada e 
+    # a quantidade antes da próxima verificação
+    insert_new_date_extraction_log(max_date, total_reviews_extracted)
     
     print(f"\n[SUCESSO] Pipeline finalizado. {total_reviews_extracted} novas reviews processadas.")
 
