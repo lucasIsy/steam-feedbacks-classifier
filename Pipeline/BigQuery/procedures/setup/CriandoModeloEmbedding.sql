@@ -1,0 +1,3 @@
+CREATE MODEL IF NOT EXISTS `__DATASET__.gemini_embedding_model`
+REMOTE WITH CONNECTION DEFAULT
+OPTIONS (ENDPOINT = 'gemini-embedding-001');
