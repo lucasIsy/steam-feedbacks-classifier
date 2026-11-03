@@ -91,21 +91,3 @@ Projeto/
 ```
 
 A arquitetura foi projetada para ser eficiente com os recursos de IA e Embeddings, além de ser imdepotente. Os recursos de inferência são utilizados apenas se houver reviews marcadas como relevantes. 
-
-O projeto foi criado inteiramente no Google Cloud Platafform usando os seguintes recursos:
-- BigQuery
-	- Otimização das tabelas para modelo ON-DEMAND
-	- Procedures
-	- Filtragem
-	- Modelos Remotos
-	- Pré-inferência(coluna request)
-	- VectorDB
-- Cloud Run/Function
-	- Extração inteligente dos dados da Steam
-	- Criação de Inferência flex/batch
-- Agent Platafform
-	- Gemini 3.1(filtragem / fragmentação)
-	- Gemini Embeddings(Classificação)
-- Cloud Workflow
-	- orquestração inteligente das procedures e recursos de IA
-
