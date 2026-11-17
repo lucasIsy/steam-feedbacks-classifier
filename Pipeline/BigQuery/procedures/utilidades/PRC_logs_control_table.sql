@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE `__DATASET__.PRC_logs_control_table`(IN etapa INT64)
+CREATE OR REPLACE PROCEDURE `__DATASET__.PRC_logs_control_table`(IN p_batch_id STRING, IN etapa INT64, IN p_rows INT64)
 BEGIN
 
   CASE etapa
@@ -6,245 +6,301 @@ BEGIN
     -- 1_PRC_regex_pre_inference - (1) verifica se existem reviews
     WHEN 1 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       ) 
       VALUES (
+          p_batch_id,
           'raw_to_temp1',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'NO_DATA',
-          'Etapa 1 - Sem reviews para processar'
+          'Etapa 1 - Sem reviews para processar',
+          p_rows
       );
 
     -- 1_PRC_regex_pre_inference - (2) verifica se existem reviews que sobreviveram ao regex
     WHEN 2 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       ) 
       VALUES (
+          p_batch_id,
           'raw_to_temp1',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'NO_DATA',
-          'Nenhum dado relevante sobreviveu à etapa de regex'
+          'Nenhum dado relevante sobreviveu à etapa de regex',
+          p_rows
       );
 
     -- 1_PRC_regex_pre_inference - (3) Etapa da filtragem até pré-inferencia completa
     WHEN 3 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'raw_to_temp1',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'Temp1 processed successfully'
+          'Temp1 processed successfully',
+          p_rows
       );
 
     -- 2_PRC_pre_fragmentacao - (1) nenhuma review foi classificada como relevante para fragmentação.
     WHEN 4 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'logic_split',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'NO_RELEVANT_DATA',
-          'Nenhum dado foi marcado como relevante'
+          'Nenhum dado foi marcado como relevante',
+          p_rows
       );
 
     -- 2_PRC_pre_fragmentacao - (2) Tudo OK, dados direcionados e continua para fragmentacao
     WHEN 5 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'sql_logic_split',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'Logic circuit completed'
+          'Logic circuit completed',
+          p_rows
       );
 
     -- 3_PRC_pos_fragmentacao - Tudo OK, os dados da fragmentação(struct) inseridos na silver e erros na DLQ
     WHEN 6 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'ai_review_split_temp2',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'AI logic split completed'
+          'AI logic split completed',
+          p_rows
       );
 
     -- 4_PRC_criacao_embeddings - OK, tudo certo
     WHEN 7 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp, -- Ajustado para manter o padrão da tabela
+          max_date_processed, -- Ajustado para manter o padrão da tabela
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES(
+          p_batch_id,
           'unnest_to_embedding',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'Data processed successfully'
+          'Data processed successfully',
+          p_rows
       );
 
     -- 5_PRC_classificacao
     WHEN 8 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'router_classifier',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'Router classifier completed'
+          'Router classifier completed',
+          p_rows
       );
 
     -- PRC_remover_tabelas_temporarias
     -- temporaria_1 - sucesso
     WHEN 9 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'Remover tabelas temporárias',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'temporaria_1 deletada com sucesso.'
+          'temporaria_1 deletada com sucesso.',
+          p_rows
       );
 
     -- PRC_remover_tabelas_temporarias
     -- temporaria_1 - falha
     WHEN 10 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'Remover tabelas temporárias',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'FAILED',
-          'temporaria_1 nao encontrada ou já deletada.'
+          'temporaria_1 nao encontrada ou já deletada.',
+          p_rows
       );
 
       -- PRC_remover_tabelas_temporarias
     -- temporaria_2 - sucesso
     WHEN 11 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'Remover tabelas temporárias',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'temporaria_2 deletada com sucesso.'
+          'temporaria_2 deletada com sucesso.',
+          p_rows
       );
 
     -- PRC_remover_tabelas_temporarias
     -- temporaria_2 - falha
     WHEN 12 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'Remover tabelas temporárias',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'FAILED',
-          'temporaria_2 nao encontrada ou já deletada.'
+          'temporaria_2 nao encontrada ou já deletada.',
+          p_rows
       );
 
       -- PRC_remover_tabelas_temporarias
     -- temporaria_3 - sucesso
     WHEN 13 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'Remover tabelas temporárias',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'SUCCESS',
-          'temporaria_3 deletada com sucesso.'
+          'temporaria_3 deletada com sucesso.',
+          p_rows
       );
 
     -- PRC_remover_tabelas_temporarias
     -- temporaria_3 - falha
     WHEN 14 THEN
       INSERT INTO `__DATASET__.logs_tabela_controle_geral` (
+          batch_id,
           pipeline_step,
-          max_processed_timestamp,
+          max_date_processed,
           inserted_at,
           status,
-          message
+          message,
+          rows_affected
       )
       VALUES (
+          p_batch_id,
           'Remover tabelas temporárias',
           CURRENT_DATE(),
           CURRENT_TIMESTAMP(),
           'FAILED',
-          'temporaria_3 nao encontrada ou já deletada.'
+          'temporaria_3 nao encontrada ou já deletada.',
+          p_rows
       );
     
     -- Tratamento caso o número enviado seja inválido
